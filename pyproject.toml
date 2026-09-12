@@ -22,7 +22,7 @@ tqdm = "4.59.0"
 # https://stackoverflow.com/questions/446209/possible-values-from-sys-platform
 pywin32 = {version = "^306", markers = "sys_platform == 'win32'"}
 pywin32-ctypes = {version = "^0.2.2", markers = "sys_platform == 'win32'"}
-cryptography = "^42.0.5"
+cryptography = ">=42.0.5,<51.0.0"
 pycryptodome = "^3.20.0"
 lxml = {extras = ["html-clean"], version = "^5.2.1"}
 confz = "^2.0.1"
