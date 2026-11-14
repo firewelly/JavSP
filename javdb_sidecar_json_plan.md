@@ -1,6 +1,6 @@
 # 需求文档：JavDB 抓取结果落盘 sidecar JSON（方案 A · JavSP_mac2 侧）
 
-> 状态：**规划稿，未实施**。日期：2026-10-30
+> 状态：**已实施**（2026-10-30：`sidecar.py`/config 开关/演员链接抓取均完成；media 侧导入升级同日完成，见 `../media/scrape_import_integration_plan.md` 与 `../media/sidecar_json_import.py`）。
 > 跨项目总方案（权威契约）：`../media/scrape_import_integration_plan.md` —— JSON schema 如需变更，须同步修订两份文档。
 > 本文档只覆盖 JavSP_mac2 侧的需求；media 侧（NFO/JSON 导入升级）见总方案 §3.2。
 

@@ -138,3 +138,9 @@ ver_hook.py
 # 本地文件
 config.yml.bak
 .codebuddy/
+
+# 浏览器持久会话（含登录cookie/年龄确认cookie，禁止入库）
+.playwright_user_data/
+.playwright_user_data_fresh/
+# 本地配置备份
+config.yml.bak_*

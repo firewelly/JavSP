@@ -15,7 +15,11 @@ base_url = 'https://www.jav321.com'
 def parse_data(movie: MovieInfo):
     """解析指定番号的影片数据"""
     html = post_html(f'{base_url}/search', data={'sn': movie.dvdid})
-    page_url = html.xpath("//ul[@class='dropdown-menu']/li/a/@href")[0]
+    urls = html.xpath("//ul[@class='dropdown-menu']/li/a/@href")
+    if not urls:
+        # 搜索页无候选链接：影片未收录（此前表现为IndexError并触发无谓的重试）
+        raise MovieNotFoundError(__name__, movie.dvdid)
+    page_url = urls[0]
     #TODO: 注意cid是dmm的概念。如果影片来自MGSTAGE，这里的cid很可能是jav321自己添加的，例如 345SIMM-542
     cid = page_url.split('/')[-1]   # /video/ipx00177
     # 如果从URL匹配到的cid是'search'，说明还停留在搜索页面，找不到这部影片

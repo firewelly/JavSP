@@ -25,7 +25,13 @@ def parse_data(movie: MovieInfo):
         raise MovieNotFoundError(__name__, movie.dvdid)
 
     html = resp2html(r)
-    container = html.xpath("//div[@class='col-md-9 px-0']")[0]
+    container = html.xpath("//div[@class='col-md-9 px-0']")
+    if not container:
+        # 站点已改版为在线播放站（结构化数据里只剩播放信息，无封面/女优等元数据），
+        # 旧版DOM不再存在，解析无意义，干净地跳过此抓取器
+        logger.debug(f'JavMenu: 页面已改版，跳过抓取: {movie.dvdid}')
+        raise MovieNotFoundError(__name__, movie.dvdid)
+    container = container[0]
     title = container.xpath("div[@class='col-12 mb-3']/h1/strong/text()")[0]
     # 竟然还在标题里插广告，真的疯了。要不是我已经写了抓取器，才懒得维护这个破站
     title = title.replace('  | JAV目錄大全 | 每日更新', '')

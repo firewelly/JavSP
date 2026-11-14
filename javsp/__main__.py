@@ -115,41 +115,68 @@ def parallel_crawler(movie: Movie, tqdm_bar=None):
     crawler_mods: List[CrawlerID] = Cfg().crawler.selection[movie.data_src]
 
     all_info = {i.value: MovieInfo(movie) for i in crawler_mods}
-    # 番号为cid但同时也有有效的dvdid时，也尝试使用普通模式进行抓取
-    if movie.data_src == 'cid' and movie.dvdid:
-        crawler_mods = crawler_mods + Cfg().crawler.selection.normal
+    # 番号为cid但同时也有有效的dvdid时，也准备使用普通模式进行抓取
+    is_cid_with_dvdid = movie.data_src == 'cid' and movie.dvdid
+    if is_cid_with_dvdid:
         for i in all_info.values():
             i.dvdid = None
-        for i in Cfg().crawler.selection.normal:
-            all_info[i.value] = MovieInfo(movie.dvdid)
-    thread_pool = []
-    for mod_partial, info in all_info.items():
-        mod = f"javsp.web.{mod_partial}"
+
+    timeout = Cfg().network.retry * Cfg().network.timeout.total_seconds()
+
+    def start_crawler_thread(mod_value, info):
+        """启动单个抓取器线程（沿用超时控制），返回线程对象"""
+        mod = f"javsp.web.{mod_value}"
         parser = getattr(sys.modules[mod], 'parse_data')
-        # 将all_info中的info实例传递给parser，parser抓取完成后，info实例的值已经完成更新
+        # 将info实例传递给parser，parser抓取完成后，info实例的值已经完成更新
         # TODO: 抓取器如果带有parse_data_raw，说明它已经自行进行了重试处理，此时将重试次数设置为1
         if hasattr(sys.modules[mod], 'parse_data_raw'):
             th = threading.Thread(target=wrapper, name=mod, args=(parser, info, 1))
         else:
             th = threading.Thread(target=wrapper, name=mod, args=(parser, info, Cfg().network.retry))
         th.start()
-        thread_pool.append(th)
-    # 等待所有线程结束
-    timeout = Cfg().network.retry * Cfg().network.timeout.total_seconds()
-    for th in thread_pool:
-        th: threading.Thread
+        return th
+
+    def run_serial(mod_value):
+        """串行运行单个抓取器，返回是否抓取成功"""
+        if mod_value not in all_info:
+            all_info[mod_value] = MovieInfo(movie)
+        th = start_crawler_thread(mod_value, all_info[mod_value])
         th.join(timeout=timeout)
-    # 根据抓取结果更新影片类型判定
-    if movie.data_src == 'cid' and movie.dvdid:
-        titles = [all_info[i].title for i in Cfg().crawler.selection[movie.data_src]]
-        if any(titles):
+        return hasattr(all_info[mod_value], 'success')
+
+    def run_parallel(mod_values):
+        """并发运行多个抓取器（all_info按配置顺序插入，保证汇总时的优先级）"""
+        threads = []
+        for mod_value in mod_values:
+            if mod_value not in all_info:
+                all_info[mod_value] = MovieInfo(movie)
+            threads.append(start_crawler_thread(mod_value, all_info[mod_value]))
+        for th in threads:
+            th.join(timeout=timeout)
+        # success属性只在抓取成功时存在
+        return [m for m in mod_values if hasattr(all_info.get(m), 'success')]
+
+    # 编排策略：首选源（如javdb）单独先行，成功即止（不惊动其他站点）；
+    # 首选源失败时，其余抓取器并发同时尝试，多源数据按配置顺序汇总
+    primary_mods = [i.value for i in crawler_mods]
+    primary_success = False
+    if primary_mods:
+        primary_success = run_serial(primary_mods[0])
+        if not primary_success and len(primary_mods) > 1:
+            run_parallel(primary_mods[1:])
+
+    if is_cid_with_dvdid:
+        if primary_success:
+            # cid抓取成功: 影片确为cid类型
             movie.dvdid = None
-            all_info = {k: v for k, v in all_info.items() if k in Cfg().crawler.selection['cid']}
+            all_info = {k: v for k, v in all_info.items() if k in primary_mods}
         else:
+            # cid抓取全部失败且有有效dvdid: 更正数据源类型后并发尝试normal抓取器
             logger.debug(f'自动更正影片数据源类型: {movie.dvdid} ({movie.cid}): normal')
             movie.data_src = 'normal'
             movie.cid = None
-            all_info = {k: v for k, v in all_info.items() if k not in Cfg().crawler.selection['cid']}
+            all_info = {k: v for k, v in all_info.items() if k not in primary_mods}
+            run_parallel([i.value for i in Cfg().crawler.selection.normal])
     # 删除抓取失败的站点对应的数据
     all_info = {k:v for k,v in all_info.items() if hasattr(v, 'success')}
     for info in all_info.values():

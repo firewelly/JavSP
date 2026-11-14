@@ -28,10 +28,12 @@ network:
   proxy_server: socks5h://127.0.0.1:1080
   # 各个站点的免代理地址。地址失效时软件会自动尝试获取新地址，你也可以手动设置
   # javdb配了镜像地址时走镜像直连；注释掉此行则走主站(javdb.com)并经由上面的代理
+  # NOTE: 登录会话(remember_me至2026-11-21)在javdb.com主站域上，须走主站+代理；
+  # javdb582镜像已被限流（随机403空响应），勿再启用
   proxy_free:
     avsox: 'https://avsox.click'
     javbus: 'https://www.seedmm.help'
-    # javdb: 'https://javdb580.com'
+    # javdb: 'https://javdb582.com'
     javlib: 'https://www.y78k.com'
   # 网络问题导致抓取数据失败时的重试次数，通常3次就差不多了
   retry: 3
@@ -40,10 +42,12 @@ network:
 
 ################################
 crawler:
-  # 要使用的爬虫列表（汇总数据时从前到后进行）
+  # 要使用的爬虫列表。编排策略：第一个抓取器（javdb）单独先行，成功即止、
+  # 不查询其他站点；javdb失败时，其余抓取器并发同时尝试，
+  # 多源成功数据按本配置顺序汇总（前面的优先）
   # airav avsox avwiki fanza fc2 fc2fan javbus javdb javlib javmenu jav321 mgstage prestige arzon arzon_iv
   selection:
-    normal: [javdb]
+    normal: [javdb, javbus, jav321, avsox]
     fc2: [javdb, fc2, avsox, javmenu, fc2ppvdb]
     cid: [fanza]
     getchu: [dl_getchu]
@@ -58,7 +62,8 @@ crawler:
   fc2fan_local_path: null
   # 刮削一部电影后的等待时间（设置为0禁用此功能）
   # https://en.wikipedia.org/wiki/ISO_8601#Durations
-  sleep_after_scraping: PT1S
+  # NOTE: 值过小会触发JavDB对IP的限流（未登录时重定向到登录页），建议>=PT5S
+  sleep_after_scraping: PT5S
   # 是否使用javdb的封面（fallback/yes/no, 默认fallback: 如果能从别的站点获得封面则不用javdb的以避免水印）
   use_javdb_cover: fallback
   # 是否统一女优艺名。启用时会尝试将女优的多个艺名统一成一个
