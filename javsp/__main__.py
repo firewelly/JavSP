@@ -47,6 +47,7 @@ from javsp.web.exceptions import *
 from javsp.web.translate import translate_movie_info
 
 from javsp.config import Cfg, CrawlerID, UseJavDBCover
+from javsp.web.pwcommon import interactive_login_active
 from javsp.prompt import prompt
 
 actressAliasMap = {}
@@ -123,6 +124,31 @@ def parallel_crawler(movie: Movie, tqdm_bar=None):
 
     timeout = Cfg().network.retry * Cfg().network.timeout.total_seconds()
 
+    def join_crawler(th):
+        """等待抓取线程结束。
+
+        常规抓取受 network.retry × timeout 的总预算限制；但抓取线程进入交互式
+        登录（登录墙弹窗等待人工处理）期间不设上限——登录墙必须等人工处理完毕
+        （登录成功或主动关闭窗口）才允许转投其他抓取器，绝不能在用户登录途中
+        静默fallback。登录窗口关闭后重新计时，保证登录后的抓取仍有完整的
+        正常超时预算。
+        """
+        deadline = time.time() + timeout
+        waited_for_login = False
+        while th.is_alive():
+            if interactive_login_active.is_set():
+                waited_for_login = True
+                th.join(timeout=5)
+                continue
+            if waited_for_login:
+                deadline = time.time() + timeout
+                waited_for_login = False
+                continue
+            remaining = deadline - time.time()
+            if remaining <= 0:
+                return
+            th.join(timeout=min(5, remaining))
+
     def start_crawler_thread(mod_value, info):
         """启动单个抓取器线程（沿用超时控制），返回线程对象"""
         mod = f"javsp.web.{mod_value}"
@@ -141,7 +167,7 @@ def parallel_crawler(movie: Movie, tqdm_bar=None):
         if mod_value not in all_info:
             all_info[mod_value] = MovieInfo(movie)
         th = start_crawler_thread(mod_value, all_info[mod_value])
-        th.join(timeout=timeout)
+        join_crawler(th)
         return hasattr(all_info[mod_value], 'success')
 
     def run_parallel(mod_values):
@@ -152,7 +178,7 @@ def parallel_crawler(movie: Movie, tqdm_bar=None):
                 all_info[mod_value] = MovieInfo(movie)
             threads.append(start_crawler_thread(mod_value, all_info[mod_value]))
         for th in threads:
-            th.join(timeout=timeout)
+            join_crawler(th)
         # success属性只在抓取成功时存在
         return [m for m in mod_values if hasattr(all_info.get(m), 'success')]
 
@@ -533,9 +559,10 @@ def RunNormalMode(all_movies):
                                 speed = get_fmt_size(info['rate']) + '/s'
                                 logger.info(f"已下载剧照{pic_url} {id}.png: {width}x{height}, {filesize} [{elapsed}, {speed}]")
                             else:
-                                check_step(False, f"下载剧照{id}: {pic_url}失败")
-                        except:
-                            check_step(False, f"下载剧照{id}: {pic_url}失败")
+                                # 剧照是可选附加内容，单张失败不应中断整部影片的整理（下载器占用/网络抖动常见）
+                                logger.warning(f"下载剧照{id}失败(已跳过): {pic_url}")
+                        except Exception as e:
+                            logger.warning(f"下载剧照{id}失败(已跳过): {pic_url}: {e}")
                         time.sleep(scrape_interval)
                 check_step(True)
 
